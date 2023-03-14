@@ -11,6 +11,7 @@ library(tidyverse)
 library(caret)
 library(glmnet)
 library(AppliedPredictiveModeling)
+library(earth)
 options(
   ggplot2.continuous.colour = "viridis",
   ggplot2.continuous.fill = "viridis"
@@ -77,6 +78,18 @@ At the 0.05 significance level, `cylinder4`, `horsepower`, `acceleration`, and `
 ## Multivariate adaptive regression spline (MARS)
 
 ```{r}
-
+set.seed(1)
+# Set tuning parameters (30 as a reserved value for 4 significant and 6 non-significant predictors)
+mars_grid = expand.grid(degree = 1:3, nprune = 2:30)
+# Fit MARS model
+mars_model = train(x = auto_df[index_auto,1:7],
+                   y = auto_df$mpg_cat[index_auto], 
+                   method = "earth",
+                   tuneGrid = mars_grid,
+                   metric = "ROC",
+                   trControl = ctrl_1)
+# Plot the model
+plot(mars_model)
+summary(mars_model)
 ```
 
