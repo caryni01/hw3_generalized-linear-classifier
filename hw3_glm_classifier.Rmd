@@ -1,0 +1,82 @@
+---
+title: "hw3_glm for classifier"
+author: "Cary Ni"
+date: "2023-03-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+library(tidyverse)
+library(caret)
+library(glmnet)
+library(AppliedPredictiveModeling)
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+```
+
+```{r}
+# load the dataset, specifiy the factor variables
+auto_df = read_csv("auto.csv", show_col_types = FALSE) %>% 
+  janitor::clean_names() %>% 
+  na.omit() %>% 
+  mutate(
+    cylinders = as_factor(cylinders),
+    origin = as_factor(origin),
+    mpg_cat = as_factor(mpg_cat))
+# data partition
+set.seed(2023)
+index_auto = createDataPartition(y = auto_df$mpg_cat, p = 0.7, list = FALSE)
+```
+
+## Feature plot for simple visualization 
+
+```{r}
+# simple visualization of the data
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+featurePlot(x = auto_df[, 2:6],
+            y = auto_df$mpg_cat, 
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "box", pch = "|",
+            auto.key = list(columns = 2))
+```
+
+## Logistic regression (without penalty)
+
+```{r}
+# specify train method for logistic
+ctrl_1 = trainControl(method = "repeatedcv",
+                      summaryFunction = twoClassSummary,
+                      classProbs = TRUE)
+set.seed(1)
+model_glm = train(x = auto_df[index_auto,1:7],
+                  y = auto_df$mpg_cat[index_auto],
+                  method = "glm",
+                  metric = "ROC",
+                  trControl = ctrl_1)
+summary(model_glm)
+contrasts(auto_df$mpg_cat)
+# create confusion matrix (no specification for positive needed)
+test_pred_prob = predict(model_glm, 
+                         newdata = auto_df[-index_auto,],
+                         type = "prob") %>% pull(high) %>% as_vector()
+test_pred = rep("low", length(test_pred_prob))
+# 50% chosen as threshold
+test_pred[test_pred_prob>0.5] = "high"
+confusionMatrix(data = as.factor(test_pred),
+                reference = auto_df$mpg_cat[-index_auto])
+
+```
+
+At the 0.05 significance level, `cylinder4`, `horsepower`, `acceleration`, and `year` (treated as numerical instead of categorical here) are significant predictors of our outcome `mpg_cat`. The confusion matrix shows that the accuracy (overall fraction of correct predictions) is about 87.9% (95% CI: 80.6% to 93.2%). The no information rate is 50%, suggesting that if same class prediction are made for all observations, the model would be an accurate classifier 50% times in this scenario. A p-value around 0 indicates the model is statistically significantly better than null classifier. Since the specification for positive has no meaning when classifying either `low` or `high`, `low` is chosen as default "positive" class. Therefore, the model has 86.2% sensitive (true positives) and 89.7% specific (true negatives), with a positive predictive value of 89.3% and a negative predictive value of 86.7%. The kappa of 0.76 means that our inter-rater reliability is relatively high compared to the agreement by chance.
+
+## Multivariate adaptive regression spline (MARS)
+
+```{r}
+
+```
+
