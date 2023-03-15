@@ -12,6 +12,10 @@ library(caret)
 library(glmnet)
 library(AppliedPredictiveModeling)
 library(earth)
+library(vip)
+library(klaR)
+library(MASS)
+library(pROC)
 options(
   ggplot2.continuous.colour = "viridis",
   ggplot2.continuous.fill = "viridis"
@@ -91,5 +95,72 @@ mars_model = train(x = auto_df[index_auto,1:7],
 # Plot the model
 plot(mars_model)
 summary(mars_model)
+# examine the importance of predictors
+vip(mars_model$finalModel)
 ```
 
+## Partition plot and linear discriminants in LDA
+
+```{r}
+# LDA based on every combination of two variables
+partimat(mpg_cat ~ displacement + horsepower + weight + acceleration + year, 
+         method = "lda", data = auto_df)
+set.seed(1)
+model_lda = train(mpg_cat~.,
+                  data = auto_df[index_auto,],
+                  method = "lda",
+                  metric = "ROC",
+                  trControl = ctrl_1)
+# show the coefficient of LDA boundary
+model_lda$finalModel$scaling
+# Plot the linear discriminant from LDA
+lda_fit = lda(mpg_cat ~ ., data = auto_df[index_auto,])
+auto_lda_values = predict(lda_fit)
+ldahist(auto_lda_values$x, g = auto_lda_values$class)
+```
+
+## Models comparsion
+
+```{r}
+# comparison based on resampling
+res = resamples(list(Logistic = model_glm,
+                     MARS = mars_model,
+                     LDA = model_lda))
+summary(res)
+bwplot(res, metric = "ROC")
+
+# comparsion based on test data (ROC curves)
+lda_pred = predict(model_lda, newdata = auto_df[-index_auto,], type = "prob")[,2]
+mars_pred = predict(mars_model, newdata = auto_df[-index_auto,], type = "prob")[,2]
+log_pred = predict(model_glm, newdata = auto_df[-index_auto,], type = "prob")[,2]
+roc_lda = roc(auto_df$mpg_cat[-index_auto], lda_pred)
+roc_mars = roc(auto_df$mpg_cat[-index_auto], mars_pred)
+roc_log = roc(auto_df$mpg_cat[-index_auto], log_pred)
+plot(roc_lda, legacy.axes = TRUE)
+plot(roc_mars, col = 2, add = TRUE)
+plot(roc_log, col = 3, add = TRUE)
+auc = c(roc_lda$auc[1], roc_mars$auc[1], roc_log$auc[1])
+modelNames = c("lda","MARS","Logistic")
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+col = 1:3, lwd = 2)
+
+# 50% chosen as threshold for LDA
+test_pred_lda = rep("low", length(lda_pred))
+test_pred_lda[lda_pred>0.5] = "high"
+confusionMatrix(data = as.factor(test_pred_lda),
+                reference = auto_df$mpg_cat[-index_auto])
+# 50% chosen as threshold for MARS
+test_pred_mars = rep("low", length(mars_pred))
+test_pred_mars[mars_pred>0.5] = "high"
+confusionMatrix(data = as.factor(test_pred_mars),
+                reference = auto_df$mpg_cat[-index_auto])
+# 50% chosen as threshold for Logistic
+test_pred_log = rep("low", length(log_pred))
+test_pred_log[log_pred>0.5] = "high"
+confusionMatrix(data = as.factor(test_pred_log),
+                reference = auto_df$mpg_cat[-index_auto])
+```
+
+Based on the cross validation results on Linear Discriminant Analysis (LDA), Multivariate adaptive regression spline (MARS), and Logistic regression, the MARS model has highest mean area under curve (AUC) and thus be favored to make the predictions.
+
+When fitting the three models above on the test dataset, Logistic regression model has highest AUC of 0.952, while LDA gives AUC of 0.933 and MARS has AUC of 0.912. Selecting 50% as the threshold of classification, both Logistic regression and MARS models give a misclassification rate of 0.121 (proportion of misclassified sample) while LDA gives a misclassification rate of 0.147. Thus it can be seen that Logistic regression model has best predictability in this test dataset. 
